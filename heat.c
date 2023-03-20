@@ -7,31 +7,15 @@
 #include "matrix.h"     // defines and manages matrix operations
 #include "bmp.h"        // defines and outputs BMP files from color arrays
 #include "loadingbar.h" // defines and draws progress bar in console, gives user something to stare at
+#include "heatmap.h"
 
 #define EXPECTED_ARGS 9
 #define TRANSFER_MAX 1.1000001 // floating point imprecision, man
 #define TRASNFER_MIN 1
 
-#define IMG_DEFAULT 1024
-#define IMG_MAX IMG_DEFAULT*5
-#define BPP 3
-                                // best results:
-#define B_DEFAULT 10            // 10
-#define G_DEFAULT 127           // 127
-#define G_DEFAULT_BRIGHT 128    // 128
-#define R_DEFAULT 10            // 10
-                                //
-#define RED_SHIFT 3             // 3
-#define BLUE_SHIFT -5           // -4
-#define GREEN_SHIFT 2           // 2
-
-struct color *matrix_generate_heatmap(float *, int, int, float, int, int, int);
-struct color *matrix_generate_heatmap_small(float *, int, int, float, int, int, int);
-void fill_pixels(struct color *, float, int, int, int, int, int, float);
-struct color avg_cell_chunk(float *, int, int, int, int, int, float);
-void handle_loading_bar(int, int, struct LoadingBar *);
 void fill_heaters(float *, struct Heater *, int, int);
 void fill_heaters_parallel(float *, struct Heater *, int, int);
+void handle_loading_bar(int, int, struct LoadingBar *);
 
 
 int main(int argc, char **argv)
@@ -134,20 +118,24 @@ int main(int argc, char **argv)
     free(tmpMatrix);
     free(heaters);
 
-    int imgW, imgH;
-    imgW = imgH = IMG_DEFAULT;
 
-    // Resize dimensions of image if matrix is lopsided, to preserve aspect ratio
+    // temp constants for testing
+    const int imgDim = 1024;
+    const int imgMaxMul = 5;
+    // // // // // // // // // //
+
+    int imgW = imgDim, imgH = imgDim;
+
     if (numCols > numRows)
     {
-        imgW = IMG_DEFAULT * ((float)numCols / (float)numRows);
+        imgW *= ((float)numCols / (float)numRows);
     }
     else if (numRows > numCols)
     {
-        imgH = IMG_DEFAULT * ((float)numRows / (float)numCols);
+        imgH *= ((float)numRows / (float)numCols);
     }
 
-    if (imgW > IMG_MAX || imgH > IMG_MAX)
+    if (imgW > imgDim * imgMaxMul || imgH > imgDim * imgMaxMul)
     {
         printf("\nImage could not be generated. This is likely due to the matrix being extremely lopsided.\n");
         printf("A very lopsided matrix will result in aspect ratio preservation being too extreme.\n");
@@ -158,18 +146,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    // Two methods of heatmap generation, one for matrix > img, another for img > matrix
-    // One has multiple cells in matrix per pixel ("chunk" of cells per pixel)
-    // The other has multiple pixels per cell in matrix (inverse "chunk" of pixels per cell)
-    struct color *heatmap;
-    if (numCols >= imgW && numRows >= imgH)
-    {
-        heatmap = matrix_generate_heatmap(matrix, numCols, numRows, baseTemp, BPP, imgW, imgH);
-    }
-    else
-    {
-        heatmap = matrix_generate_heatmap_small(matrix, numCols, numRows, baseTemp, BPP, imgW, imgH);
-    }
+    unsigned char *heatmap = heatmap_gen(matrix, numCols, numRows, imgW, imgH, baseTemp);
 
     // formats the above data to a real image
     bmp_generate_image(heatmap, imgH, imgW, outImgName);
@@ -205,229 +182,6 @@ void fill_heaters(float *matrix, struct Heater *heaters, int arrayLen, int cols)
         matrix[heaters[i].col + (heaters[i].row * cols)] = heaters[i].temp;
     }
 }*/
-
-// cells per pixel mode
-// Generates a 1d array containing color data for a heatmap
-// Takes matrix and dimension data to accomplish this
-// This one is for matrices larger than the image being generated
-struct color *matrix_generate_heatmap(float *matrix, int cols, int rows, float base, int pixelBytes, int imgW, int imgH)
-{
-    struct color *map = (struct color *)malloc((imgW * imgH) * sizeof(struct color));
-
-    const int cells_per_pixel_x = cols / imgW;
-    const int cells_per_pixel_y = rows / imgH;
-
-    const int remainder_x = cols - (cells_per_pixel_x * imgW);
-    const int remainder_y = rows - (cells_per_pixel_y * imgH);
-
-    int ypos, yend, yrem;
-    ypos = yend = 0;
-    yrem = remainder_y;
-    for (int i = 0; i < imgH; i++)
-    {
-        ypos = yend;
-        yend = ypos + cells_per_pixel_y;
-
-        if (yrem > 0)
-        {
-            yrem--;
-            yend++;
-        }
-
-        int xpos, xend, xrem;
-        xpos = xend = 0;
-        xrem = remainder_x;
-        for (int j = 0; j < imgW; j++)
-        {
-            xpos = xend;
-            xend = xpos + cells_per_pixel_x;
-
-            if (xrem > 0)
-            {
-                xrem--;
-                xend++;
-            }
-            
-            struct color chunk = avg_cell_chunk(matrix, xpos, xend, ypos, yend, cols, base);
-
-            map[j + (i * imgW)] = chunk;
-        }
-    }
-
-    return map;
-}
-
-// pixels per cell mode
-// Generates a 1d array containing color data for a heatmap
-// Takes matrix and dimension data to accomplish this
-// This one is for matrices smaller than the image being generated
-struct color *matrix_generate_heatmap_small(float *matrix, int cols, int rows, float base, int pixelBytes, int imgW, int imgH)
-{
-    struct color *map = (struct color *)malloc((imgW * imgH) * sizeof(struct color));
-
-    // x/y chunks per pixel, and remainder chunks after those
-    int pixels_per_cell_x = 1. / ((float)cols / (float)imgW);
-    int pixels_per_cell_y = 1. / ((float)rows / (float)imgH);
-
-    int remainder_x = imgW - (pixels_per_cell_x * cols);
-    int remainder_y = imgH - (pixels_per_cell_y * rows);
-
-
-    int ypos, yend, yrem;
-    ypos = yend = 0;
-    yrem = remainder_y;
-    for (int i = 0; i < rows; i++)
-    {
-        ypos = yend;
-        yend = ypos + pixels_per_cell_y;
-
-        if (yrem > 0)
-        {
-            yrem--;
-            yend++;
-        }
-
-        int xpos, xend, xrem;
-        xpos = xend = 0;
-        xrem = remainder_x;
-        for (int j = 0; j < cols; j++)
-        {
-            xpos = xend;
-            xend = xpos + pixels_per_cell_x;
-
-            if (xrem > 0)
-            {
-                xrem--;
-                xend++;
-            }
-
-            fill_pixels(map, matrix[j + (i * cols)], xpos, xend, ypos, yend, imgW, base);
-        }
-    }
-
-    return map;
-}
-
-// Fills in multiple pixels in the output array,
-// equal to a "chunk" of matrix cells, of a given size.
-// Math to figure out chunk size is done elsewhere and fed in.
-void fill_pixels(struct color *map, float pixel, int start_x, int end_x, int start_y, int end_y, int imgW, float base)
-{
-    struct color default_color;
-    default_color.b = B_DEFAULT;
-    default_color.g = G_DEFAULT;
-    default_color.r = R_DEFAULT;
-
-    int r, g, b;
-    float relativeTemp = pixel - base;
-
-    if (relativeTemp > 0)
-    {
-        r = ceil((relativeTemp) * RED_SHIFT);
-        g = default_color.g - (relativeTemp * GREEN_SHIFT);
-        b = default_color.b;
-    }
-    else if (relativeTemp < 0)
-    {
-        b = ceil((relativeTemp) * BLUE_SHIFT);
-        g = G_DEFAULT_BRIGHT - (relativeTemp * GREEN_SHIFT);
-        r = default_color.r;
-    }
-
-    if (g >= default_color.g - 2 && g <= default_color.g + 1)
-    {
-        g = G_DEFAULT_BRIGHT;
-    }
-
-    if (b > 255) { b = 255; }
-    if (b < 0)   { b = 0;   }
-    if (g > 255) { g = 255; }
-    if (g < 0)   { g = 0;   }
-    if (r > 255) { r = 255; }
-    if (r < 0)   { r = 0;   }
-
-    struct color newColor;
-    newColor.b = b;
-    newColor.g = g;
-    newColor.r = r;
-
-    for (int i = start_y; i < end_y; i++)
-    {
-        for (int j = start_x; j < end_x; j++)
-        {
-            map[j + (i * imgW)] = newColor;
-        }
-    }
-}
-
-// Averages a "chunk" of cells in the matrix,
-// of a given size. This forms an averaged heat
-// pixel in the final image.
-// Math done elsewhere for chunk size, and fed in.
-struct color avg_cell_chunk(float *matrix, int start_x, int end_x, int start_y, int end_y, int cols, float base)
-{
-    struct color default_color;
-    default_color.b = B_DEFAULT;
-    default_color.g = G_DEFAULT;
-    default_color.r = R_DEFAULT;
-
-    int redAvg, greenAvg, blueAvg;
-    redAvg = greenAvg = blueAvg = 0;
-
-    for (int i = start_y; i < end_y; i++)
-    {
-        for (int j = start_x; j < end_x; j++)
-        {
-            int b = default_color.b;
-            int g = default_color.g;
-            int r = default_color.r;
-
-            float relativeTemp = matrix[j + (i * cols)] - base;
-
-            if (relativeTemp > 0)
-            {
-                r = ceil((relativeTemp) * RED_SHIFT);
-                g = default_color.g - (relativeTemp * GREEN_SHIFT);
-                b = default_color.b;
-            }
-            else if (relativeTemp < 0)
-            {
-                b = ceil((relativeTemp) * BLUE_SHIFT);
-                g = G_DEFAULT_BRIGHT - (relativeTemp * GREEN_SHIFT);
-                r = default_color.r;
-            }
-
-            if (g >= default_color.g - 2 && g <= default_color.g + 1)
-            {
-                g = G_DEFAULT_BRIGHT;
-            }
-
-            redAvg   += r;
-            greenAvg += g;
-            blueAvg  += b;
-        }
-    }
-
-    int total = (end_x - start_x) * (end_y - start_y);
-
-    blueAvg  /= total;
-    greenAvg /= total;
-    redAvg   /= total;
-
-    if (blueAvg < 0)    { blueAvg =  0;   }
-    if (blueAvg > 255)  { blueAvg =  255; }
-    if (greenAvg < 0)   { greenAvg = 0;   }
-    if (greenAvg > 255) { greenAvg = 255; }
-    if (redAvg < 0)     { redAvg =   0;   }
-    if (redAvg > 255)   { redAvg =   255; }
-
-    struct color chunk;
-    chunk.b = blueAvg;
-    chunk.g = greenAvg;
-    chunk.r = redAvg;
-
-    return chunk;
-}
 
 // Handles loading bar, checks if it needs an update.
 // Conditions for update are an increase in whole-number percent,

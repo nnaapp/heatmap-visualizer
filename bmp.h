@@ -1,13 +1,6 @@
 #ifndef BMP_H
 #define BMP_H
 
-struct color
-{
-    unsigned char r;
-    unsigned char g;
-    unsigned char b;
-};
-
-void bmp_generate_image(struct color *, int, int, char *);
+void bmp_generate_image(unsigned char *, int, int, char *);
 
 #endif

@@ -9,7 +9,7 @@
 unsigned char *bmp_generate_header(int, int, int);
 unsigned char *bmp_generate_info(int, int);
 
-void bmp_generate_image(struct color *img, int height, int width, char *fileName)
+void bmp_generate_image(unsigned char *img, int height, int width, char *fileName)
 {
     int byteWidth = width * BYTES_PER_PIXEL;
 
@@ -28,7 +28,9 @@ void bmp_generate_image(struct color *img, int height, int width, char *fileName
     {
         for (int j = 0; j < width; j++)
         {
-            unsigned char color[] = {img[j + (i * width)].b, img[j + (i * width)].g, img[j + (i * width)].r};
+            unsigned char color[] = {img[(j + (i * width)) * BYTES_PER_PIXEL + 0], 
+                img[(j + (i * width)) * BYTES_PER_PIXEL + 1], img[(j + (i * width)) * BYTES_PER_PIXEL + 2]};
+;
             fwrite(color, 1, BYTES_PER_PIXEL, imgFile);
         }
         fwrite(padding, 1, paddingSize, imgFile);
