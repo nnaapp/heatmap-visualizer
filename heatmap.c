@@ -14,16 +14,17 @@ unsigned char *heatmap_gen(float *matrix, int cols, int rows, int imgW, int imgH
 {
     unsigned char *map;
 
-
     // Two methods of heatmap generation, one for matrix > img, another for img > matrix
     // One has multiple cells in matrix per pixel ("chunk" of cells per pixel)
     // The other has multiple pixels per cell in matrix (inverse "chunk" of pixels per cell)
     if (cols >= imgW && rows >= imgH)
     {
+        // image will be smaller than matrix, each pixel being an average of cells
         map = generate_cells_per_pixel(matrix, cols, rows, baseTemp, BPP, imgW, imgH);
     }
     else
     {
+        // image will be larger than matrix, each cell having multiple pixels in the output
         map = generate_pixels_per_cell(matrix, cols, rows, baseTemp, BPP, imgW, imgH);
     }
 
@@ -73,9 +74,10 @@ unsigned char *generate_cells_per_pixel(float *matrix, int cols, int rows, float
             }
             
             struct pixel chunk_p = avg_cell_chunk(matrix, xpos, xend, ypos, yend, cols, base);
-            map[(j + (i * imgW)) * pixelBytes + 0] = chunk_p.b;
-            map[(j + (i * imgW)) * pixelBytes + 1] = chunk_p.g;
-            map[(j + (i * imgW)) * pixelBytes + 2] = chunk_p.r;
+            int start_index = (j + (i * imgW)) * pixelBytes;
+            map[start_index + 0] = chunk_p.b;
+            map[start_index + 1] = chunk_p.g;
+            map[start_index + 2] = chunk_p.r;
         }
     }
 
@@ -91,11 +93,11 @@ unsigned char *generate_pixels_per_cell(float *matrix, int cols, int rows, float
     unsigned char *map = malloc((imgW * imgH) * pixelBytes * sizeof(*map));
 
     // x/y chunks per pixel, and remainder chunks after those
-    int pixels_per_cell_x = 1. / ((float)cols / (float)imgW);
-    int pixels_per_cell_y = 1. / ((float)rows / (float)imgH);
+    const int pixels_per_cell_x = 1. / ((float)cols / (float)imgW);
+    const int pixels_per_cell_y = 1. / ((float)rows / (float)imgH);
 
-    int remainder_x = imgW - (pixels_per_cell_x * cols);
-    int remainder_y = imgH - (pixels_per_cell_y * rows);
+    const int remainder_x = imgW - (pixels_per_cell_x * cols);
+    const int remainder_y = imgH - (pixels_per_cell_y * rows);
 
     int ypos, yend, yrem;
     ypos = yend = 0;
@@ -163,19 +165,14 @@ void fill_pixels(unsigned char *map, float cell, int start_x, int end_x, int sta
     g = bind(g, 0, 255);
     r = bind(r, 0, 255);
 
-    // Matrix cell's color, used for multiple pixels
-    struct pixel cell_color;
-    cell_color.b = b;
-    cell_color.g = g;
-    cell_color.r = r;
-
     for (int i = start_y; i < end_y; i++)
     {
         for (int j = start_x; j < end_x; j++)
         {
-            map[(j + (i * imgW)) * pixelBytes + 0] = cell_color.b;
-            map[(j + (i * imgW)) * pixelBytes + 1] = cell_color.g;
-            map[(j + (i * imgW)) * pixelBytes + 2] = cell_color.r;
+            int start_index = (j + (i * imgW)) * pixelBytes;
+            map[start_index + 0] = b;
+            map[start_index + 1] = g;
+            map[start_index + 2] = r;
         }
     }
 }

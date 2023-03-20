@@ -28,8 +28,8 @@ void bmp_generate_image(unsigned char *img, int height, int width, char *fileNam
     {
         for (int j = 0; j < width; j++)
         {
-            unsigned char color[] = {img[(j + (i * width)) * BYTES_PER_PIXEL + 0], 
-                img[(j + (i * width)) * BYTES_PER_PIXEL + 1], img[(j + (i * width)) * BYTES_PER_PIXEL + 2]};
+            int start_index = (j + (i * width)) * BYTES_PER_PIXEL;
+            unsigned char color[] = {img[start_index + 0], img[start_index + 1], img[start_index + 2]};
 ;
             fwrite(color, 1, BYTES_PER_PIXEL, imgFile);
         }

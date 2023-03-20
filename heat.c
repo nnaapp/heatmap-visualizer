@@ -120,7 +120,7 @@ int main(int argc, char **argv)
 
 
     // temp constants for testing
-    const int imgDim = 1024;
+    const int imgDim = 512;
     const int imgMaxMul = 5;
     // // // // // // // // // //
 
