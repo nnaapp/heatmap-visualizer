@@ -12,7 +12,21 @@ void init_map(Map *, int, int, int, unsigned char *);
 int bind(int, int, int);
 Color lerp(Color, Color, float);
 
+// Places data type matters:
+// fill_pixels    : relativeTemp, t, maybe range
+//                  store relative temp, t, and range as doubles? and cast to needed type?
+//                  should work for ints, chars, floats, and doubles.
+//                  then just have functions to do the necessary casted calcs.
+//
+// avg_cell_chunk : relativeTemp, t, maybe range
+//                  same as above, should work hopefully
+//
+// bind           : data type being bound, might be deprecated though
+//                  just dont use bind :)
 
+// TODO: Make user defined color schemes more intuitive.
+//       having to make a 9 element array kind of sucks, and
+//       also sucks to unpack it.
 unsigned char *heatmap_gen(float *matrix, int cols, int rows, int imgW, int imgH, float baseTemp, float range, unsigned char *colors)
 {
     Matrix *data = malloc(sizeof(*data));

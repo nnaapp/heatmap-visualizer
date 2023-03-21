@@ -24,7 +24,9 @@ typedef struct Matrix
     float *matrix;
     int cols;
     int rows;
-    float baseVal;
+    double baseVal; // base value of matrix, the "room temperature"
+    double range;   // the deviance value that will result in a 0.0 or 1.0 lerp
+    double (*get_relative_val)(const void *, const void *); // gets relative value between two vars, func ptr
 } Matrix;
 
 typedef struct Map
