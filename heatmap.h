@@ -1,8 +1,6 @@
 #ifndef HEATMAP_H
 #define HEATMAP_H
 
-//#define IMG_DEFAULT 1024
-#define IMG_MAX_MULT 5
 #define BPP 3
                                 // best results:
 #define B_DEFAULT 10            // 10
@@ -14,13 +12,21 @@
 #define BLUE_SHIFT -5           // -4
 #define GREEN_SHIFT 2           // 2
 
-struct pixel
+typedef struct Color
 {
     unsigned char b;
     unsigned char g;
     unsigned char r;
-};
+} Color;
 
-unsigned char *heatmap_gen(float *, int, int, int, int, float);
+typedef struct Matrix
+{
+    float *matrix;
+    int cols;
+    int rows;
+    float baseVal;
+} Matrix;
+
+unsigned char *heatmap_gen(float *, int, int, int, int, float, float);
 
 #endif
