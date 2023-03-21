@@ -3,20 +3,23 @@
 #include <stdio.h>
 #include "heatmap.h"
 
-void generate_cells_per_pixel(Matrix, unsigned char *, int, int, int, float);
-void generate_pixels_per_cell(Matrix, unsigned char *, int, int, int, float);
-void fill_pixels(unsigned char *, float, int, int, int, int, int, int, float, float);
-Color avg_cell_chunk(Matrix, int, int, int, int, float);
-Matrix init_matrix(float *, int, int, float);
-unsigned char *init_map(int, int, int);
+void generate_cells_per_pixel(Matrix *, Map *, float);
+void generate_pixels_per_cell(Matrix *, Map *, float);
+void fill_pixels(Map *, float, int, int, int, int, float, float);
+Color avg_cell_chunk(Matrix *, Map *, int, int, int, int, float);
+void init_matrix(Matrix *, float *, int, int, float);
+void init_map(Map *, int, int, int, unsigned char *);
 int bind(int, int, int);
 Color lerp(Color, Color, float);
 
 
-unsigned char *heatmap_gen(float *matrix, int cols, int rows, int imgW, int imgH, float baseTemp, float range)
+unsigned char *heatmap_gen(float *matrix, int cols, int rows, int imgW, int imgH, float baseTemp, float range, unsigned char *colors)
 {
-    Matrix data = init_matrix(matrix, cols, rows, baseTemp);
-    unsigned char *map = init_map(imgW, imgH, BPP);
+    Matrix *data = malloc(sizeof(*data));
+    init_matrix(data, matrix, cols, rows, baseTemp);
+
+    Map *dataMap = malloc(sizeof(*dataMap));
+    init_map(dataMap, imgW, imgH, BPP, colors);
 
     // Two methods of heatmap generation, one for matrix > img, another for img > matrix
     // One has multiple cells in matrix per pixel ("chunk" of cells per pixel)
@@ -24,33 +27,37 @@ unsigned char *heatmap_gen(float *matrix, int cols, int rows, int imgW, int imgH
     if (cols >= imgW && rows >= imgH)
     {
         // image will be smaller than matrix, each color being an average of cells
-        generate_cells_per_pixel(data, map, BPP, imgW, imgH, range);
+        generate_cells_per_pixel(data, dataMap, range);
     }
     else
     {
         // image will be larger than matrix, each cell having multiple pixels in the output
-        generate_pixels_per_cell(data, map, BPP, imgW, imgH, range);
+        generate_pixels_per_cell(data, dataMap, range);
     }
 
-    return map;
+    free(data);
+    unsigned char *final_map = dataMap->map;
+    free(dataMap);
+
+    return final_map;
 }
 
 // cells per pixel mode
 // Generates a 1d array containing pixel data for a heatmap
 // Takes matrix and dimension data to accomplish this
 // This one is for matrices larger than the image being generated
-void generate_cells_per_pixel(Matrix data, unsigned char *map, int colorBytes, int imgW, int imgH, float range)
+void generate_cells_per_pixel(Matrix *data, Map *dataMap, float range)
 {
-    const int cells_per_color_x = data.cols / imgW;
-    const int cells_per_color_y = data.rows / imgH;
+    const int cells_per_color_x = data->cols / dataMap->imgW;
+    const int cells_per_color_y = data->rows / dataMap->imgH;
 
-    const int remainder_x = data.cols - (cells_per_color_x * imgW);
-    const int remainder_y = data.rows - (cells_per_color_y * imgH);
+    const int remainder_x = data->cols - (cells_per_color_x * dataMap->imgW);
+    const int remainder_y = data->rows - (cells_per_color_y * dataMap->imgH);
 
     int ypos, yend, yrem;
     ypos = yend = 0;
     yrem = remainder_y;
-    for (int i = 0; i < imgH; i++)
+    for (int i = 0; i < dataMap->imgH; i++)
     {
         ypos = yend;
         yend = ypos + cells_per_color_y;
@@ -64,7 +71,7 @@ void generate_cells_per_pixel(Matrix data, unsigned char *map, int colorBytes, i
         int xpos, xend, xrem;
         xpos = xend = 0;
         xrem = remainder_x;
-        for (int j = 0; j < imgW; j++)
+        for (int j = 0; j < dataMap->imgW; j++)
         {
             xpos = xend;
             xend = xpos + cells_per_color_x;
@@ -75,11 +82,11 @@ void generate_cells_per_pixel(Matrix data, unsigned char *map, int colorBytes, i
                 xend++;
             }
             
-            Color chunk_p = avg_cell_chunk(data, xpos, xend, ypos, yend, range);
-            int start_index = (j + (i * imgW)) * colorBytes;
-            map[start_index + 0] = chunk_p.b;
-            map[start_index + 1] = chunk_p.g;
-            map[start_index + 2] = chunk_p.r;
+            Color chunk_p = avg_cell_chunk(data, dataMap, xpos, xend, ypos, yend, range);
+            int start_index = (j + (i * dataMap->imgW)) * dataMap->bpp;
+            dataMap->map[start_index + 0] = chunk_p.b;
+            dataMap->map[start_index + 1] = chunk_p.g;
+            dataMap->map[start_index + 2] = chunk_p.r;
         }
     }
 }
@@ -88,19 +95,19 @@ void generate_cells_per_pixel(Matrix data, unsigned char *map, int colorBytes, i
 // Generates a 1d array containing color data for a heatmap
 // Takes matrix and dimension data to accomplish this
 // This one is for matrices smaller than the image being generated
-void generate_pixels_per_cell(Matrix data, unsigned char *map, int colorBytes, int imgW, int imgH, float range)
+void generate_pixels_per_cell(Matrix *data, Map *dataMap, float range)
 {
     // x/y chunks per pixel, and remainder chunks after those
-    const int colors_per_cell_x = 1. / ((float)data.cols / (float)imgW);
-    const int colors_per_cell_y = 1. / ((float)data.rows / (float)imgH);
+    const int colors_per_cell_x = 1. / ((float)data->cols / (float)dataMap->imgW);
+    const int colors_per_cell_y = 1. / ((float)data->rows / (float)dataMap->imgH);
 
-    const int remainder_x = imgW - (colors_per_cell_x * data.cols);
-    const int remainder_y = imgH - (colors_per_cell_y * data.rows);
+    const int remainder_x = dataMap->imgW - (colors_per_cell_x * data->cols);
+    const int remainder_y = dataMap->imgH - (colors_per_cell_y * data->rows);
 
     int ypos, yend, yrem;
     ypos = yend = 0;
     yrem = remainder_y;
-    for (int i = 0; i < data.rows; i++)
+    for (int i = 0; i < data->rows; i++)
     {
         ypos = yend;
         yend = ypos + colors_per_cell_y;
@@ -114,7 +121,7 @@ void generate_pixels_per_cell(Matrix data, unsigned char *map, int colorBytes, i
         int xpos, xend, xrem;
         xpos = xend = 0;
         xrem = remainder_x;
-        for (int j = 0; j < data.cols; j++)
+        for (int j = 0; j < data->cols; j++)
         {
             xpos = xend;
             xend = xpos + colors_per_cell_x;
@@ -126,8 +133,7 @@ void generate_pixels_per_cell(Matrix data, unsigned char *map, int colorBytes, i
             }
 
             // Fills multiple pixels in map, easiest way to handle this method
-            fill_pixels(map, data.matrix[j + (i * data.cols)], xpos, xend, ypos, yend, 
-                imgW, colorBytes, data.baseVal, range);
+            fill_pixels(dataMap, data->matrix[j + (i * data->cols)], xpos, xend, ypos, yend, data->baseVal, range);
         }
     }
 }
@@ -137,21 +143,12 @@ void generate_pixels_per_cell(Matrix data, unsigned char *map, int colorBytes, i
 // Fills in multiple pixels in the output array,
 // equal to a "chunk" of matrix cells, of a given size.
 // Math to figure out chunk size is done elsewhere and fed in.
-void fill_pixels(unsigned char *map, float cell, int start_x, int end_x, int start_y, int end_y, int imgW, int colorBytes, float base, float range)
+void fill_pixels(Map *dataMap, float cell, int start_x, int end_x, int start_y, int end_y, float base, float range)
 {
-    int r, g, b;
+    //int r, g, b;
     float relativeTemp = cell - base;
 
-    Color low, norm, high, c;
-    low.b = 255;
-    low.g = low.r = 0;
-
-    norm.g = 128;
-    norm.b = norm.r = 0;
-
-    high.r = 255;
-    high.g = high.b = 0;
-
+    Color c;
     if (relativeTemp >= 0)
     {
         // = ceil((relativeTemp) * RED_SHIFT);
@@ -161,7 +158,7 @@ void fill_pixels(unsigned char *map, float cell, int start_x, int end_x, int sta
         if (t > 1.0)
             t = 1.0;
         
-        c = lerp(norm, high, t);
+        c = lerp(dataMap->color_norm, dataMap->color_high, t);
     }
     else if (relativeTemp < 0)
     {
@@ -172,10 +169,10 @@ void fill_pixels(unsigned char *map, float cell, int start_x, int end_x, int sta
         if (t > 1.0)
             t = 1.0;
         
-        c = lerp(norm, low, t);
+        c = lerp(dataMap->color_norm, dataMap->color_low, t);
     }
 
-    printf("%d %d %d\n", c.b, c.g, c.r);
+    //printf("%d %d %d\n", c.b, c.g, c.r);
 
     //if (g >= G_DEFAULT - 2 && g <= G_DEFAULT + 1)
     //{
@@ -190,10 +187,10 @@ void fill_pixels(unsigned char *map, float cell, int start_x, int end_x, int sta
     {
         for (int j = start_x; j < end_x; j++)
         {
-            int start_index = (j + (i * imgW)) * colorBytes;
-            map[start_index + 0] = c.b;
-            map[start_index + 1] = c.g;
-            map[start_index + 2] = c.r;
+            int start_index = (j + (i * dataMap->imgW)) * dataMap->bpp;
+            dataMap->map[start_index + 0] = c.b;
+            dataMap->map[start_index + 1] = c.g;
+            dataMap->map[start_index + 2] = c.r;
         }
     }
 }
@@ -202,29 +199,20 @@ void fill_pixels(unsigned char *map, float cell, int start_x, int end_x, int sta
 // of a given size. This forms an averaged heat
 // pixel in the final image.
 // Math done elsewhere for chunk size, and fed in.
-Color avg_cell_chunk(Matrix data, int start_x, int end_x, int start_y, int end_y, float range)
+Color avg_cell_chunk(Matrix *data, Map *dataMap, int start_x, int end_x, int start_y, int end_y, float range)
 {
     int redAvg = 0, greenAvg = 0, blueAvg = 0;
-
-    Color low, norm, high, c;
-    low.b = 255;
-    low.g = low.r = 0;
-
-    norm.g = 128;
-    norm.b = norm.r = 0;
-
-    high.r = 255;
-    high.g = high.b = 0;
+    Color c;
 
     for (int i = start_y; i < end_y; i++)
     {
         for (int j = start_x; j < end_x; j++)
         {
-            int b = B_DEFAULT;
-            int g = G_DEFAULT;
-            int r = R_DEFAULT;
+            //int b = B_DEFAULT;
+            //int g = G_DEFAULT;
+            //int r = R_DEFAULT;
 
-            float relativeTemp = data.matrix[j + (i * data.cols)] - data.baseVal;
+            float relativeTemp = data->matrix[j + (i * data->cols)] - data->baseVal;
 
             if (relativeTemp >= 0)
             {
@@ -235,7 +223,7 @@ Color avg_cell_chunk(Matrix data, int start_x, int end_x, int start_y, int end_y
                 if (t > 1.0)
                     t = 1.0;
 
-                c = lerp(norm, high, t);
+                c = lerp(dataMap->color_norm, dataMap->color_high, t);
             }
             else if (relativeTemp < 0)
             {
@@ -246,7 +234,7 @@ Color avg_cell_chunk(Matrix data, int start_x, int end_x, int start_y, int end_y
                 if (t > 1.0)
                     t = 1.0;
                 
-                c = lerp(norm, low, t);
+                c = lerp(dataMap->color_norm, dataMap->color_low, t);
             }
 
             //if (g >= G_DEFAULT - 2 && g <= G_DEFAULT + 1)
@@ -278,22 +266,36 @@ Color avg_cell_chunk(Matrix data, int start_x, int end_x, int start_y, int end_y
     return chunk_p;
 }
 
-Matrix init_matrix(float *matrix, int cols, int rows, float base)
+void init_matrix(Matrix *m, float *matrix, int cols, int rows, float base)
 {
-    Matrix m;
-    m.matrix  = matrix;
-    m.cols    = cols;
-    m.rows    = rows;
-    m.baseVal = base;
-
-    return m;
+    m->matrix  = matrix;
+    m->cols    = cols;
+    m->rows    = rows;
+    m->baseVal = base;
 }
 
-unsigned char *init_map(int width, int height, int bpp)
+void init_map(Map *dataMap, int width, int height, int bpp, unsigned char *colors)
 {
-    unsigned char *map = malloc((width * height) * bpp * sizeof(*map));
+    dataMap->map = malloc((width * height) * bpp * sizeof(*dataMap->map));
+    dataMap->imgW = width;
+    dataMap->imgH = height;
+    dataMap->bpp = bpp;
 
-    return map;
+    Color temp;
+    temp.b = colors[0];
+    temp.g = colors[1];
+    temp.r = colors[2];
+    dataMap->color_low = temp;
+
+    temp.b = colors[3];
+    temp.g = colors[4];
+    temp.r = colors[5];
+    dataMap->color_norm = temp;
+
+    temp.b = colors[6];
+    temp.g = colors[7];
+    temp.r = colors[8];
+    dataMap->color_high = temp;
 }
 
 int bind(int val, int min, int max)

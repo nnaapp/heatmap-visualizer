@@ -27,6 +27,17 @@ typedef struct Matrix
     float baseVal;
 } Matrix;
 
-unsigned char *heatmap_gen(float *, int, int, int, int, float, float);
+typedef struct Map
+{
+    unsigned char *map;
+    int imgW;
+    int imgH;
+    int bpp;
+    Color color_low;
+    Color color_norm;
+    Color color_high;
+} Map;
+
+unsigned char *heatmap_gen(float *, int, int, int, int, float, float, unsigned char *);
 
 #endif

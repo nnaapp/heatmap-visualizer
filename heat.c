@@ -146,7 +146,10 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    unsigned char *heatmap = heatmap_gen(matrix, numCols, numRows, imgW, imgH, baseTemp, 50.0);
+    unsigned char colors[] = {255, 224, 122, 
+                              96, 204, 143, 
+                              94, 84, 235};
+    unsigned char *heatmap = heatmap_gen(matrix, numCols, numRows, imgW, imgH, baseTemp, 25.0, colors);
 
     // formats the above data to a real image
     bmp_generate_image(heatmap, imgH, imgW, outImgName);
