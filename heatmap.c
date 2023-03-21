@@ -3,10 +3,10 @@
 #include <stdio.h>
 #include "heatmap.h"
 
-void generate_cells_per_pixel(Matrix, unsigned char *, int, int, int);
+void generate_cells_per_pixel(Matrix, unsigned char *, int, int, int, float);
 void generate_pixels_per_cell(Matrix, unsigned char *, int, int, int, float);
 void fill_pixels(unsigned char *, float, int, int, int, int, int, int, float, float);
-Color avg_cell_chunk(Matrix, int, int, int, int);
+Color avg_cell_chunk(Matrix, int, int, int, int, float);
 Matrix init_matrix(float *, int, int, float);
 unsigned char *init_map(int, int, int);
 int bind(int, int, int);
@@ -24,7 +24,7 @@ unsigned char *heatmap_gen(float *matrix, int cols, int rows, int imgW, int imgH
     if (cols >= imgW && rows >= imgH)
     {
         // image will be smaller than matrix, each color being an average of cells
-        generate_cells_per_pixel(data, map, BPP, imgW, imgH);
+        generate_cells_per_pixel(data, map, BPP, imgW, imgH, range);
     }
     else
     {
@@ -39,7 +39,7 @@ unsigned char *heatmap_gen(float *matrix, int cols, int rows, int imgW, int imgH
 // Generates a 1d array containing pixel data for a heatmap
 // Takes matrix and dimension data to accomplish this
 // This one is for matrices larger than the image being generated
-void generate_cells_per_pixel(Matrix data, unsigned char *map, int colorBytes, int imgW, int imgH)
+void generate_cells_per_pixel(Matrix data, unsigned char *map, int colorBytes, int imgW, int imgH, float range)
 {
     const int cells_per_color_x = data.cols / imgW;
     const int cells_per_color_y = data.rows / imgH;
@@ -75,7 +75,7 @@ void generate_cells_per_pixel(Matrix data, unsigned char *map, int colorBytes, i
                 xend++;
             }
             
-            Color chunk_p = avg_cell_chunk(data, xpos, xend, ypos, yend);
+            Color chunk_p = avg_cell_chunk(data, xpos, xend, ypos, yend, range);
             int start_index = (j + (i * imgW)) * colorBytes;
             map[start_index + 0] = chunk_p.b;
             map[start_index + 1] = chunk_p.g;
@@ -202,9 +202,19 @@ void fill_pixels(unsigned char *map, float cell, int start_x, int end_x, int sta
 // of a given size. This forms an averaged heat
 // pixel in the final image.
 // Math done elsewhere for chunk size, and fed in.
-Color avg_cell_chunk(Matrix data, int start_x, int end_x, int start_y, int end_y)
+Color avg_cell_chunk(Matrix data, int start_x, int end_x, int start_y, int end_y, float range)
 {
     int redAvg = 0, greenAvg = 0, blueAvg = 0;
+
+    Color low, norm, high, c;
+    low.b = 255;
+    low.g = low.r = 0;
+
+    norm.g = 128;
+    norm.b = norm.r = 0;
+
+    high.r = 255;
+    high.g = high.b = 0;
 
     for (int i = start_y; i < end_y; i++)
     {
@@ -216,27 +226,37 @@ Color avg_cell_chunk(Matrix data, int start_x, int end_x, int start_y, int end_y
 
             float relativeTemp = data.matrix[j + (i * data.cols)] - data.baseVal;
 
-            if (relativeTemp > 0)
+            if (relativeTemp >= 0)
             {
-                r = ceil((relativeTemp) * RED_SHIFT);
-                g = G_DEFAULT - (relativeTemp * GREEN_SHIFT);
-                b = B_DEFAULT;
+                //r = ceil((relativeTemp) * RED_SHIFT);
+                //g = G_DEFAULT - (relativeTemp * GREEN_SHIFT);
+                //b = B_DEFAULT;
+                float t = relativeTemp / range;
+                if (t > 1.0)
+                    t = 1.0;
+
+                c = lerp(norm, high, t);
             }
             else if (relativeTemp < 0)
             {
-                b = ceil((relativeTemp) * BLUE_SHIFT);
-                g = G_DEFAULT_BRIGHT - (relativeTemp * GREEN_SHIFT);
-                r = R_DEFAULT;
+                //b = ceil((relativeTemp) * BLUE_SHIFT);
+                //g = G_DEFAULT_BRIGHT - (relativeTemp * GREEN_SHIFT);
+                //r = R_DEFAULT;
+                float t = -relativeTemp / range;
+                if (t > 1.0)
+                    t = 1.0;
+                
+                c = lerp(norm, low, t);
             }
 
-            if (g >= G_DEFAULT - 2 && g <= G_DEFAULT + 1)
-            {
-                g = G_DEFAULT_BRIGHT;
-            }
+            //if (g >= G_DEFAULT - 2 && g <= G_DEFAULT + 1)
+            //{
+            //    g = G_DEFAULT_BRIGHT;
+            //}
 
-            redAvg   += r;
-            greenAvg += g;
-            blueAvg  += b;
+            redAvg   += c.r;
+            greenAvg += c.g;
+            blueAvg  += c.b;
         }
     }
 

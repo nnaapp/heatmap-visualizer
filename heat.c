@@ -120,7 +120,7 @@ int main(int argc, char **argv)
 
 
     // temp constants for testing
-    const int imgDim = 512;
+    const int imgDim = 1024;
     const int imgMaxMul = 5;
     // // // // // // // // // //
 
@@ -146,7 +146,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    unsigned char *heatmap = heatmap_gen(matrix, numCols, numRows, imgW, imgH, baseTemp, 125.2);
+    unsigned char *heatmap = heatmap_gen(matrix, numCols, numRows, imgW, imgH, baseTemp, 50.0);
 
     // formats the above data to a real image
     bmp_generate_image(heatmap, imgH, imgW, outImgName);
