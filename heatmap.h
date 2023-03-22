@@ -19,14 +19,17 @@ typedef struct Color
     unsigned char r;
 } Color;
 
+typedef struct Matrix Matrix;
+
 typedef struct Matrix
 {
-    float *matrix;
+    void *matrix;
     int cols;
     int rows;
-    double baseVal; // base value of matrix, the "room temperature"
-    double range;   // the deviance value that will result in a 0.0 or 1.0 lerp
-    double (*get_relative_val)(const void *, const void *); // gets relative value between two vars, func ptr
+    long double baseVal; // base value of matrix, the "room temperature"
+    long double range;   // the deviance value that will result in a 0.0 or 1.0 lerp
+    long double (*get_relative_val)(Matrix *, const int); // gets relative value between two vars, func ptr
+
 } Matrix;
 
 typedef struct Map
@@ -40,6 +43,8 @@ typedef struct Map
     Color color_high;
 } Map;
 
-unsigned char *heatmap_gen(float *, int, int, int, int, float, float, unsigned char *);
+typedef enum matrix_type {FLOAT, INT, DOUBLE, LONG} matrix_type;
+
+unsigned char *heatmap_gen(void *, matrix_type, int, int, int, int, long double, long double, unsigned char *);
 
 #endif

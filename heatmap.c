@@ -5,12 +5,21 @@
 
 void generate_cells_per_pixel(Matrix *, Map *, float);
 void generate_pixels_per_cell(Matrix *, Map *, float);
-void fill_pixels(Map *, float, int, int, int, int, float, float);
-Color avg_cell_chunk(Matrix *, Map *, int, int, int, int, float);
-void init_matrix(Matrix *, float *, int, int, float);
+
+void fill_pixels(Map *, Matrix *, int, int, int, int, int);
+Color avg_cell_chunk(Matrix *, Map *, int, int, int, int);
+
+void init_matrix(Matrix *, void *, matrix_type, int, int, long double, long double);
 void init_map(Map *, int, int, int, unsigned char *);
+
 int bind(int, int, int);
 Color lerp(Color, Color, float);
+
+// for use as function pointers, to support multiple numeric types
+long double relative_val_float(Matrix *, const int);
+long double relative_val_int(Matrix *, const int);
+long double relative_val_double(Matrix *, const int);
+long double relative_val_long(Matrix *, const int);
 
 // Places data type matters:
 // fill_pixels    : relativeTemp, t, maybe range
@@ -24,13 +33,16 @@ Color lerp(Color, Color, float);
 // bind           : data type being bound, might be deprecated though
 //                  just dont use bind :)
 
+// TODO: Improve performance, minimize casting, it runs a bit slow at the moment.
+//       Maybe multithreading, also just optimizing function ptr usage.
+
 // TODO: Make user defined color schemes more intuitive.
 //       having to make a 9 element array kind of sucks, and
 //       also sucks to unpack it.
-unsigned char *heatmap_gen(float *matrix, int cols, int rows, int imgW, int imgH, float baseTemp, float range, unsigned char *colors)
+unsigned char *heatmap_gen(void *matrix, matrix_type t, int cols, int rows, int imgW, int imgH, long double base, long double range, unsigned char *colors)
 {
     Matrix *data = malloc(sizeof(*data));
-    init_matrix(data, matrix, cols, rows, baseTemp);
+    init_matrix(data, matrix, t, cols, rows, base, range);
 
     Map *dataMap = malloc(sizeof(*dataMap));
     init_map(dataMap, imgW, imgH, BPP, colors);
@@ -96,7 +108,7 @@ void generate_cells_per_pixel(Matrix *data, Map *dataMap, float range)
                 xend++;
             }
             
-            Color chunk_p = avg_cell_chunk(data, dataMap, xpos, xend, ypos, yend, range);
+            Color chunk_p = avg_cell_chunk(data, dataMap, xpos, xend, ypos, yend);
             int start_index = (j + (i * dataMap->imgW)) * dataMap->bpp;
             dataMap->map[start_index + 0] = chunk_p.b;
             dataMap->map[start_index + 1] = chunk_p.g;
@@ -147,28 +159,22 @@ void generate_pixels_per_cell(Matrix *data, Map *dataMap, float range)
             }
 
             // Fills multiple pixels in map, easiest way to handle this method
-            fill_pixels(dataMap, data->matrix[j + (i * data->cols)], xpos, xend, ypos, yend, data->baseVal, range);
+            fill_pixels(dataMap, data, j + (i * data->cols), xpos, xend, ypos, yend);
         }
     }
 }
 
-// TODO: somehow reduce this, i hate having this many args
-//
 // Fills in multiple pixels in the output array,
 // equal to a "chunk" of matrix cells, of a given size.
 // Math to figure out chunk size is done elsewhere and fed in.
-void fill_pixels(Map *dataMap, float cell, int start_x, int end_x, int start_y, int end_y, float base, float range)
+void fill_pixels(Map *dataMap, Matrix *data, int cell_index, int start_x, int end_x, int start_y, int end_y)
 {
-    //int r, g, b;
-    float relativeTemp = cell - base;
+    long double relativeTemp = data->get_relative_val(data, cell_index);
 
     Color c;
     if (relativeTemp >= 0)
     {
-        // = ceil((relativeTemp) * RED_SHIFT);
-        //g = G_DEFAULT - (relativeTemp * GREEN_SHIFT);
-        //b = B_DEFAULT;
-        float t = relativeTemp / range;
+        float t = relativeTemp / data->range;
         if (t > 1.0)
             t = 1.0;
         
@@ -176,26 +182,12 @@ void fill_pixels(Map *dataMap, float cell, int start_x, int end_x, int start_y, 
     }
     else if (relativeTemp < 0)
     {
-        //b = ceil((relativeTemp) * BLUE_SHIFT);
-        //g = G_DEFAULT_BRIGHT - (relativeTemp * GREEN_SHIFT);
-        //r = R_DEFAULT;
-        float t = -relativeTemp / range;
+        float t = -relativeTemp / data->range;
         if (t > 1.0)
             t = 1.0;
         
         c = lerp(dataMap->color_norm, dataMap->color_low, t);
     }
-
-    //printf("%d %d %d\n", c.b, c.g, c.r);
-
-    //if (g >= G_DEFAULT - 2 && g <= G_DEFAULT + 1)
-    //{
-    //    g = G_DEFAULT_BRIGHT;
-    //}
-
-    //b = bind(b, 0, 255);
-    //g = bind(g, 0, 255);
-    //r = bind(r, 0, 255);
 
     for (int i = start_y; i < end_y; i++)
     {
@@ -213,7 +205,7 @@ void fill_pixels(Map *dataMap, float cell, int start_x, int end_x, int start_y, 
 // of a given size. This forms an averaged heat
 // pixel in the final image.
 // Math done elsewhere for chunk size, and fed in.
-Color avg_cell_chunk(Matrix *data, Map *dataMap, int start_x, int end_x, int start_y, int end_y, float range)
+Color avg_cell_chunk(Matrix *data, Map *dataMap, int start_x, int end_x, int start_y, int end_y)
 {
     int redAvg = 0, greenAvg = 0, blueAvg = 0;
     Color c;
@@ -222,18 +214,11 @@ Color avg_cell_chunk(Matrix *data, Map *dataMap, int start_x, int end_x, int sta
     {
         for (int j = start_x; j < end_x; j++)
         {
-            //int b = B_DEFAULT;
-            //int g = G_DEFAULT;
-            //int r = R_DEFAULT;
-
-            float relativeTemp = data->matrix[j + (i * data->cols)] - data->baseVal;
+            float relativeTemp = data->get_relative_val(data, j + (i * data->cols));
 
             if (relativeTemp >= 0)
             {
-                //r = ceil((relativeTemp) * RED_SHIFT);
-                //g = G_DEFAULT - (relativeTemp * GREEN_SHIFT);
-                //b = B_DEFAULT;
-                float t = relativeTemp / range;
+                float t = relativeTemp / data->range;
                 if (t > 1.0)
                     t = 1.0;
 
@@ -241,20 +226,12 @@ Color avg_cell_chunk(Matrix *data, Map *dataMap, int start_x, int end_x, int sta
             }
             else if (relativeTemp < 0)
             {
-                //b = ceil((relativeTemp) * BLUE_SHIFT);
-                //g = G_DEFAULT_BRIGHT - (relativeTemp * GREEN_SHIFT);
-                //r = R_DEFAULT;
-                float t = -relativeTemp / range;
+                float t = -relativeTemp / data->range;
                 if (t > 1.0)
                     t = 1.0;
                 
                 c = lerp(dataMap->color_norm, dataMap->color_low, t);
             }
-
-            //if (g >= G_DEFAULT - 2 && g <= G_DEFAULT + 1)
-            //{
-            //    g = G_DEFAULT_BRIGHT;
-            //}
 
             redAvg   += c.r;
             greenAvg += c.g;
@@ -280,12 +257,32 @@ Color avg_cell_chunk(Matrix *data, Map *dataMap, int start_x, int end_x, int sta
     return chunk_p;
 }
 
-void init_matrix(Matrix *m, float *matrix, int cols, int rows, float base)
+void init_matrix(Matrix *m, void *matrix, matrix_type t, int cols, int rows, long double base, long double range)
 {
     m->matrix  = matrix;
     m->cols    = cols;
     m->rows    = rows;
     m->baseVal = base;
+    m->range   = range;
+
+    switch(t)
+    {
+        case(FLOAT):
+            m->get_relative_val = relative_val_float;
+            break;
+        case(INT):
+            m->get_relative_val = relative_val_int;
+            break;
+        case(DOUBLE):
+            m->get_relative_val = relative_val_double;
+            break;
+        case(LONG):
+            m->get_relative_val = relative_val_long;
+            break;
+        default:
+            // TODO: error handling, even though this should be impossible.
+            break;
+    }
 }
 
 void init_map(Map *dataMap, int width, int height, int bpp, unsigned char *colors)
@@ -333,4 +330,28 @@ Color lerp(Color c1, Color c2, float t)
     newColor.g = c1.g * (1.0 - t) + (c2.g * t);
     newColor.r = c1.r * (1.0 - t) + (c2.r * t);
     return newColor;
+}
+
+long double relative_val_float(Matrix *m, const int i)
+{
+    float val = ((float *)m->matrix)[i];
+    return (long double)(val - m->baseVal);
+}
+
+long double relative_val_int(Matrix *m, const int i)
+{
+    int val = ((int *)m->matrix)[i];
+    return (long double)(val - m->baseVal);
+}
+
+long double relative_val_double(Matrix *m, const int i)
+{
+    double val = ((double *)m->matrix)[i];
+    return (long double)(val - m->baseVal);
+}
+
+long double relative_val_long(Matrix *m, const int i)
+{
+    long val = ((double *)m->matrix)[i];
+    return (long double)(val - m->baseVal);
 }
