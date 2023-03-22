@@ -43,8 +43,9 @@ typedef struct Map
     Color color_high;
 } Map;
 
-typedef enum matrix_type {FLOAT, INT, DOUBLE, LONG} matrix_type;
-
-unsigned char *heatmap_gen(void *, matrix_type, int, int, int, int, long double, long double, unsigned char *);
+unsigned char *generate_map_float(float *, int, int, int, int, float, float, unsigned char *);
+unsigned char *generate_map_int(int *, int, int, int, int, int, int, unsigned char *);
+unsigned char *generate_map_double(double *, int, int, int, int, double, double, unsigned char *);
+unsigned char *generate_map_long(long *, int, int, int, int, long, long, unsigned char *);
 
 #endif

@@ -3,14 +3,16 @@
 #include <stdio.h>
 #include "heatmap.h"
 
-void generate_cells_per_pixel(Matrix *, Map *, float);
-void generate_pixels_per_cell(Matrix *, Map *, float);
+unsigned char *heatmap_gen(Matrix *, int, int, unsigned char *);
+
+void generate_cells_per_pixel(Matrix *, Map *);
+void generate_pixels_per_cell(Matrix *, Map *);
 
 void fill_pixels(Map *, Matrix *, int, int, int, int, int);
 Color avg_cell_chunk(Matrix *, Map *, int, int, int, int);
 
-void init_matrix(Matrix *, void *, matrix_type, int, int, long double, long double);
-void init_map(Map *, int, int, int, unsigned char *);
+Matrix *init_matrix(void *, int, int, long double, long double);
+Map *init_map(int, int, int, unsigned char *);
 
 int bind(int, int, int);
 Color lerp(Color, Color, float);
@@ -39,40 +41,131 @@ long double relative_val_long(Matrix *, const int);
 // TODO: Make user defined color schemes more intuitive.
 //       having to make a 9 element array kind of sucks, and
 //       also sucks to unpack it.
-unsigned char *heatmap_gen(void *matrix, matrix_type t, int cols, int rows, int imgW, int imgH, long double base, long double range, unsigned char *colors)
+unsigned char *heatmap_gen(Matrix *data, int imgW, int imgH, unsigned char *colors)
 {
-    Matrix *data = malloc(sizeof(*data));
-    init_matrix(data, matrix, t, cols, rows, base, range);
-
-    Map *dataMap = malloc(sizeof(*dataMap));
-    init_map(dataMap, imgW, imgH, BPP, colors);
+    Map *dataMap = init_map(imgW, imgH, BPP, colors);
 
     // Two methods of heatmap generation, one for matrix > img, another for img > matrix
     // One has multiple cells in matrix per pixel ("chunk" of cells per pixel)
     // The other has multiple pixel per cell in matrix (inverse "chunk" of pixels per cell)
-    if (cols >= imgW && rows >= imgH)
+    if (data->cols >= imgW && data->rows >= imgH)
     {
         // image will be smaller than matrix, each color being an average of cells
-        generate_cells_per_pixel(data, dataMap, range);
+        generate_cells_per_pixel(data, dataMap);
     }
     else
     {
         // image will be larger than matrix, each cell having multiple pixels in the output
-        generate_pixels_per_cell(data, dataMap, range);
+        generate_pixels_per_cell(data, dataMap);
     }
 
-    free(data);
     unsigned char *final_map = dataMap->map;
     free(dataMap);
 
     return final_map;
 }
 
+//
+/* Type specifying initial function, these are what the user calls in their code. */
+/* This tells the functions doing the work what type to expect, via function ptr. */
+//
+unsigned char *generate_map_float(float *arr, int cols, int rows, int imgW, int imgH, float base, float range, unsigned char *colors)
+{
+    Matrix *data = init_matrix(arr, cols, rows, base, range);
+    data->get_relative_val = relative_val_float;
+
+    unsigned char *final_map = heatmap_gen(data, imgW, imgH, colors);
+
+    free(data);
+    return final_map;
+}
+
+unsigned char *generate_map_int(int *arr, int cols, int rows, int imgW, int imgH, int base, int range, unsigned char *colors)
+{
+    Matrix *data = init_matrix(arr, cols, rows, base, range);
+    data->get_relative_val = relative_val_int;
+
+    unsigned char *final_map = heatmap_gen(data, imgW, imgH, colors);
+
+    free(data);
+    return final_map;
+}
+
+unsigned char *generate_map_double(double *arr, int cols, int rows, int imgW, int imgH, double base, double range, unsigned char *colors)
+{
+    Matrix *data = init_matrix(arr, cols, rows, base, range);
+    data->get_relative_val = relative_val_double;
+
+    unsigned char *final_map = heatmap_gen(data, imgW, imgH, colors);
+
+    free(data);
+    return final_map;
+}
+
+unsigned char *generate_map_long(long *arr, int cols, int rows, int imgW, int imgH, long base, long range, unsigned char *colors)
+{
+    Matrix *data = init_matrix(arr, cols, rows, base, range);
+    data->get_relative_val = relative_val_long;
+
+    unsigned char *final_map = heatmap_gen(data, imgW, imgH, colors);
+
+    free(data);
+    return final_map;
+}
+
+//
+/* Initializers for matrix and map structs, basically constructors. */
+//
+Matrix *init_matrix(void *matrix, int cols, int rows, long double base, long double range)
+{
+    Matrix *m = malloc(sizeof(*m));
+
+    m->matrix  = matrix;
+    m->cols    = cols;
+    m->rows    = rows;
+    m->baseVal = base;
+    m->range   = range;
+
+    return m;
+}
+
+Map *init_map(int width, int height, int bpp, unsigned char *colors)
+{
+    Map *m = malloc(sizeof(*m));
+
+    m->map = malloc((width * height) * bpp * sizeof(*m->map));
+    m->imgW = width;
+    m->imgH = height;
+    m->bpp = bpp;
+
+    Color temp;
+    temp.b = colors[0];
+    temp.g = colors[1];
+    temp.r = colors[2];
+    m->color_low = temp;
+
+    temp.b = colors[3];
+    temp.g = colors[4];
+    temp.r = colors[5];
+    m->color_norm = temp;
+
+    temp.b = colors[6];
+    temp.g = colors[7];
+    temp.r = colors[8];
+    m->color_high = temp;
+
+    return m;
+}
+
+//
+/* The actual heavy lifting functions, converting the given data type matrix */
+/* into color data and storing it in unsigned char form.                     */
+//
 // cells per pixel mode
 // Generates a 1d array containing pixel data for a heatmap
 // Takes matrix and dimension data to accomplish this
 // This one is for matrices larger than the image being generated
-void generate_cells_per_pixel(Matrix *data, Map *dataMap, float range)
+void generate_cells_per_pixel(Matrix *data, Map *dataMap)
 {
     const int cells_per_color_x = data->cols / dataMap->imgW;
     const int cells_per_color_y = data->rows / dataMap->imgH;
@@ -121,7 +214,7 @@ void generate_cells_per_pixel(Matrix *data, Map *dataMap, float range)
 // Generates a 1d array containing color data for a heatmap
 // Takes matrix and dimension data to accomplish this
 // This one is for matrices smaller than the image being generated
-void generate_pixels_per_cell(Matrix *data, Map *dataMap, float range)
+void generate_pixels_per_cell(Matrix *data, Map *dataMap)
 {
     // x/y chunks per pixel, and remainder chunks after those
     const int colors_per_cell_x = 1. / ((float)data->cols / (float)dataMap->imgW);
@@ -257,58 +350,9 @@ Color avg_cell_chunk(Matrix *data, Map *dataMap, int start_x, int end_x, int sta
     return chunk_p;
 }
 
-void init_matrix(Matrix *m, void *matrix, matrix_type t, int cols, int rows, long double base, long double range)
-{
-    m->matrix  = matrix;
-    m->cols    = cols;
-    m->rows    = rows;
-    m->baseVal = base;
-    m->range   = range;
-
-    switch(t)
-    {
-        case(FLOAT):
-            m->get_relative_val = relative_val_float;
-            break;
-        case(INT):
-            m->get_relative_val = relative_val_int;
-            break;
-        case(DOUBLE):
-            m->get_relative_val = relative_val_double;
-            break;
-        case(LONG):
-            m->get_relative_val = relative_val_long;
-            break;
-        default:
-            // TODO: error handling, even though this should be impossible.
-            break;
-    }
-}
-
-void init_map(Map *dataMap, int width, int height, int bpp, unsigned char *colors)
-{
-    dataMap->map = malloc((width * height) * bpp * sizeof(*dataMap->map));
-    dataMap->imgW = width;
-    dataMap->imgH = height;
-    dataMap->bpp = bpp;
-
-    Color temp;
-    temp.b = colors[0];
-    temp.g = colors[1];
-    temp.r = colors[2];
-    dataMap->color_low = temp;
-
-    temp.b = colors[3];
-    temp.g = colors[4];
-    temp.r = colors[5];
-    dataMap->color_norm = temp;
-
-    temp.b = colors[6];
-    temp.g = colors[7];
-    temp.r = colors[8];
-    dataMap->color_high = temp;
-}
-
+//
+/* Utility functions, basic operations used multiple times. */
+//
 int bind(int val, int min, int max)
 {
     if (val < 0)
@@ -332,6 +376,10 @@ Color lerp(Color c1, Color c2, float t)
     return newColor;
 }
 
+//
+/* Type-specific functions for use as function pointers,          */
+/* these are used in structs to specify how to handle the matrix. */
+//
 long double relative_val_float(Matrix *m, const int i)
 {
     float val = ((float *)m->matrix)[i];
